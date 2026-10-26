@@ -104,21 +104,6 @@ function stopTimers() {
   timers = [];
 }
 
-// Обратный отсчёт; add(-2) отнимает 2 секунды
-function countdown(seconds, onTick, onEnd) {
-  const t = { end: Date.now() + seconds * 1000, add(s) { this.end += s * 1000; } };
-  let prev = seconds;
-  const id = every(() => {
-    const left = Math.max(0, Math.ceil((t.end - Date.now()) / 1000));
-    if (left !== prev && left > 0 && left <= 5) sound.tick();
-    prev = left;
-    onTick(left);
-    if (left <= 0) { clearInterval(id); onEnd(); }
-  }, 200);
-  onTick(seconds);
-  return t;
-}
-
 // ================= Звук =================
 // Мягкие звуки синтезируются на лету, без файлов
 let audio = null;
@@ -145,7 +130,8 @@ const NOTES = [262, 294, 330, 349, 392, 440, 494, 523, 587]; // до, ре, ми
 const sound = {
   right: () => tone(880, 0, 0.1, 0.05),
   wrong: () => tone(160, 0, 0.25, 0.08, 'triangle'),
-  cell: n => tone(NOTES[n], 0, 0.35, 0.07),
+  flip: () => tone(520, 0, 0.07, 0.04),
+  cell: n => tone(NOTES[n % NOTES.length], 0, 0.35, 0.07),
   tick: () => tone(1200, 0, 0.04, 0.025),
   finish: () => [523, 659, 784].forEach((f, i) => tone(f, i * 0.1, 0.35)),
   rankup: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.12, 0.5, 0.08)),
@@ -160,6 +146,30 @@ function flash(node, cls) {
   void node.offsetWidth; // перезапуск анимации
   node.classList.add(cls);
   later(() => node.classList.remove(cls), 300);
+}
+
+// Обратный отсчёт; add(-2) отнимает 2 секунды
+function countdown(seconds, onTick, onEnd) {
+  const t = { end: Date.now() + seconds * 1000, add(s) { this.end += s * 1000; } };
+  let prev = seconds;
+  const id = every(() => {
+    const left = Math.max(0, Math.ceil((t.end - Date.now()) / 1000));
+    if (left !== prev && left > 0 && left <= 5) sound.tick();
+    prev = left;
+    onTick(left);
+    if (left <= 0) { clearInterval(id); onEnd(); }
+  }, 200);
+  onTick(seconds);
+  return t;
+}
+
+// Секундомер в шапке игры; возвращает функцию «сколько секунд прошло»
+function stopwatch(setTimer) {
+  const t0 = Date.now();
+  const sec = () => Math.floor((Date.now() - t0) / 1000);
+  every(() => setTimer('⏱ ' + sec() + ' с'), 250);
+  setTimer('⏱ 0 с');
+  return sec;
 }
 
 const app = document.getElementById('app');
@@ -227,158 +237,78 @@ function numberOptions(answer) {
   return shuffle([...set]);
 }
 
-// ================= Игры =================
+// ================= Данные для игр =================
 const COLORS = [
-  { name: 'красный', css: '#ef4444' },
-  { name: 'синий',   css: '#3b82f6' },
-  { name: 'зелёный', css: '#22c55e' },
-  { name: 'жёлтый',  css: '#eab308' },
+  { name: 'красный',    css: '#d0392b' },
+  { name: 'синий',      css: '#2f6fd1' },
+  { name: 'зелёный',    css: '#2e9a4b' },
+  { name: 'фиолетовый', css: '#8b4fc9' },
 ];
 
-const TOPICS = [
-  'Почему пицца — лучшая еда в мире',
-  'Как объяснить паркур бабушке',
-  'Что бы ты сделал с миллионом рублей',
-  'Самый странный сон в твоей жизни',
-  'Почему коты однажды захватят мир',
-  'Если бы ты был супергероем',
-  'Как приготовить идеальное тесто',
-  'Зачем человеку горы',
-  'Лучший фильм детства',
-  'Что важнее: талант или упорство',
-  'Как уговорить друга пойти на тренировку',
-  'Почему понедельник — день тяжёлый',
-  'Если бы животные умели говорить',
-  'Идеальный выходной',
-  'Что бы ты сказал себе 10 лет назад',
-  'Почему стоит учить программирование',
-  'Самый смешной случай на работе',
-  'Как пережить зомби-апокалипсис',
-  'Почему голуби кивают при ходьбе',
-  'Как продать снег зимой',
+const PAIR_ICONS = ['🍕', '🧗', '🥟', '🐈', '🦉', '🚀', '🎸', '🌵', '🍩', '⚽', '🐙', '🌈'];
+
+// Пары «почти одинаковых» значков для игры «Найди лишнее»
+const ODD_PAIRS = [
+  ['😀', '😃'], ['🙂', '😊'], ['😐', '😑'], ['😺', '😸'], ['🐻', '🐨'], ['🍏', '🍎'],
+  ['⭐', '🌟'], ['🌑', '🌚'], ['О', '0'], ['б', '6'], ['Ш', 'Щ'], ['З', '3'],
+  ['Е', 'Ё'], ['п', 'н'], ['Ь', 'Ъ'], ['8', 'В'],
 ];
 
-const WORDS = ['ананас', 'трамвай', 'космос', 'бабушка', 'носок', 'дракон', 'лифт', 'кактус',
-  'самурай', 'пылесос', 'радуга', 'бутерброд', 'пингвин', 'метро', 'скрипка', 'вулкан',
-  'утюг', 'робот', 'варенье', 'маяк'];
+const DISK_COLORS = ['#e9b38f', '#d97757', '#b9573a', '#8a3f2a'];
 
-function makeSeries(level) {
-  const idx = [0, 1, 2, 3, 4];
-  const kinds = [
-    () => { const a = rand(1, 20), d = rand(2, 9); return idx.map(i => a + d * i); },
-    () => { const a = rand(30, 90), d = rand(2, 7); return idx.map(i => a - d * i); },
-    () => { const a = rand(1, 5), r = rand(2, 3); return idx.map(i => a * r ** i); },
-    () => { const a = rand(1, 10), d = rand(1, 4); const s = [a]; for (let i = 1; i < 5; i++) s.push(s[i - 1] + d * i); return s; },
-    () => { const a = rand(10, 30), x = rand(4, 9), y = rand(1, x - 1); const s = [a]; for (let i = 1; i < 5; i++) s.push(s[i - 1] + (i % 2 ? x : -y)); return s; },
-    () => { const o = rand(1, 6); return idx.map(i => (i + o) ** 2); },
-    () => { const s = [rand(1, 5), rand(1, 5)]; while (s.length < 5) s.push(s[s.length - 1] + s[s.length - 2]); return s; },
-  ];
-  return pick(kinds.slice(0, Math.min(kinds.length, 2 + level)))();
+// Слова для анаграмм по длине: 5, 6 и 7 букв
+const ANAGRAM_WORDS = [
+  ['кошка', 'книга', 'игрок', 'сахар', 'зебра', 'ветер', 'вилка', 'лампа', 'лодка', 'мышка', 'песок',
+   'поезд', 'салат', 'танец', 'шапка', 'белка', 'груша', 'школа', 'тесто', 'океан', 'город'],
+  ['ракета', 'газета', 'машина', 'собака', 'корова', 'молоко', 'облако', 'улитка', 'дракон', 'кролик',
+   'мастер', 'турник', 'прыжок', 'паркур', 'солнце', 'фонарь'],
+  ['планета', 'котлета', 'ромашка', 'капуста', 'бабочка', 'дельфин', 'кенгуру', 'черника', 'телефон',
+   'пингвин', 'колбаса', 'зеркало', 'воркаут'],
+];
+
+// Судоку 6×6 (блоки 2×3): готовое решение + головоломка с единственным ответом
+function makeSudoku() {
+  const N = 6, R = 2, C = 3;
+  const digits = shuffle([1, 2, 3, 4, 5, 6]);
+  const rows = shuffle([0, 1, 2]).flatMap(b => shuffle([0, 1]).map(r => b * R + r));
+  const cols = shuffle([0, 1]).flatMap(s => shuffle([0, 1, 2]).map(c => s * C + c));
+  const sol = rows.map(r => cols.map(c => digits[(C * (r % R) + Math.floor(r / R) + c) % N]));
+  const puzzle = sol.map(r => r.slice());
+  let empty = 0;
+  for (const k of shuffle([...Array(36).keys()])) {
+    const r = Math.floor(k / 6), c = k % 6, v = puzzle[r][c];
+    puzzle[r][c] = 0;
+    if (countSolutions(puzzle, 2) === 1) empty++;
+    else puzzle[r][c] = v;
+    if (empty >= 18) break;
+  }
+  return { sol, puzzle };
 }
 
+function countSolutions(g, limit) {
+  let count = 0;
+  const ok = (r, c, v) => {
+    for (let i = 0; i < 6; i++) if (g[r][i] === v || g[i][c] === v) return false;
+    const br = r - r % 2, bc = c - c % 3;
+    for (let i = br; i < br + 2; i++) for (let j = bc; j < bc + 3; j++) if (g[i][j] === v) return false;
+    return true;
+  };
+  (function solve() {
+    for (let r = 0; r < 6; r++) for (let c = 0; c < 6; c++) {
+      if (g[r][c]) continue;
+      for (let v = 1; v <= 6 && count < limit; v++) {
+        if (ok(r, c, v)) { g[r][c] = v; solve(); g[r][c] = 0; }
+      }
+      return;
+    }
+    count++;
+  })();
+  return count;
+}
+
+// ================= Игры =================
 const GAMES = [
-  {
-    id: 'schulte', skill: 'attention', icon: '🔢', name: 'Таблица Шульте',
-    rules: [
-      'На поле перемешаны числа от 1 до 25.',
-      'Нажимай их по порядку как можно быстрее: 1, 2, 3…',
-      'Ошибка — +2 секунды штрафа.',
-      'Совет: смотри в центр таблицы и старайся видеть всё поле целиком, не бегая глазами.',
-    ],
-    start({ area, setTimer, setScore, finish }) {
-      let next = 1, penalty = 0;
-      const t0 = Date.now();
-      const elapsed = () => (Date.now() - t0) / 1000 + penalty;
-      every(() => setTimer('⏱ ' + elapsed().toFixed(1) + ' с'), 100);
-      setScore('Найди: 1');
-      const grid = el('div', { class: 'schulte' });
-      shuffle([...Array(25)].map((_, i) => i + 1)).forEach(n => {
-        const c = el('button', { class: 'cell', onclick: () => {
-          if (n !== next) { penalty += 2; sound.wrong(); buzz(); flash(c, 'wrong'); return; }
-          sound.right();
-          flash(c, 'right');
-          next++;
-          if (next > 25) {
-            const s = elapsed();
-            finish(Math.min(150, Math.max(10, 170 - 3 * s)),
-              `Время: ${s.toFixed(1)} с. Хороший результат — меньше 30 секунд.`);
-          } else {
-            setScore('Найди: ' + next);
-          }
-        } }, n);
-        grid.append(c);
-      });
-      area.append(grid);
-    },
-  },
-  {
-    id: 'stroop', skill: 'attention', icon: '🎨', name: 'Цвет или слово',
-    rules: [
-      'Появляется название цвета, написанное краской другого цвета.',
-      'Жми кнопку с цветом КРАСКИ, а не с тем, что написано.',
-      'Например, слово «СИНИЙ» красными буквами — жми «красный».',
-      '30 секунд. Ошибки уменьшают награду.',
-    ],
-    start(ctx) {
-      runQuiz(ctx, {
-        seconds: 30,
-        makeTask() {
-          const word = pick(COLORS);
-          let ink;
-          do { ink = pick(COLORS); } while (ink === word && Math.random() < 0.8);
-          return { text: word.name.toUpperCase(), color: ink.css, cls: 'stroop',
-            options: COLORS.map(c => c.name), answer: ink.name };
-        },
-        xp: st => Math.max(0, (st.right - st.wrong) * 4),
-        summary: st => `Верно: ${st.right}, ошибок: ${st.wrong}.`,
-      });
-    },
-  },
-  {
-    id: 'math', skill: 'speed', icon: '➗', name: 'Быстрый счёт',
-    rules: [
-      'Решай примеры в уме и выбирай правильный ответ.',
-      'Каждые 5 верных ответов — примеры сложнее.',
-      '45 секунд. Ошибка отнимает 2 секунды.',
-    ],
-    start(ctx) {
-      runQuiz(ctx, {
-        seconds: 45, penalty: 2,
-        makeTask(level) {
-          const ops = level < 2 ? ['+', '−'] : level < 4 ? ['+', '−', '×'] : ['+', '−', '×', '÷'];
-          const op = pick(ops), max = 10 * level + 5;
-          let a, b, res;
-          if (op === '+') { a = rand(2, max); b = rand(2, max); res = a + b; }
-          else if (op === '−') { a = rand(5, max + 5); b = rand(1, a); res = a - b; }
-          else if (op === '×') { a = rand(2, 3 + level * 2); b = rand(2, 9); res = a * b; }
-          else { b = rand(2, 9); res = rand(2, 3 + level * 2); a = b * res; }
-          return { text: `${a} ${op} ${b} = ?`, options: numberOptions(res), answer: res };
-        },
-        xp: st => Math.max(0, (st.right - st.wrong) * 6),
-        summary: st => `Верно: ${st.right}, ошибок: ${st.wrong}. Дошёл до уровня ${st.level}.`,
-      });
-    },
-  },
-  {
-    id: 'series', skill: 'logic', icon: '📈', name: 'Продолжи ряд',
-    rules: [
-      'Показан ряд чисел, построенный по правилу.',
-      'Найди правило и выбери следующее число.',
-      'Правила бывают разные: прибавить, умножить, чередовать, сложить два предыдущих…',
-      '60 секунд. Ошибка отнимает 3 секунды.',
-    ],
-    start(ctx) {
-      runQuiz(ctx, {
-        seconds: 60, penalty: 3,
-        makeTask(level) {
-          const s = makeSeries(level);
-          return { text: s.slice(0, 4).join(', ') + ', ?', options: numberOptions(s[4]), answer: s[4] };
-        },
-        xp: st => Math.max(0, (st.right - st.wrong) * 8),
-        summary: st => `Разгадано рядов: ${st.right}, ошибок: ${st.wrong}.`,
-      });
-    },
-  },
+  // ----- Память -----
   {
     id: 'sequence', skill: 'memory', icon: '💡', name: 'Повтори за мной',
     rules: [
@@ -387,7 +317,7 @@ const GAMES = [
       'Каждый раунд цепочка длиннее на одну клетку. Одна ошибка — конец игры.',
     ],
     start({ area, setTimer, setScore, finish }) {
-      const grid = el('div', { class: 'sequence locked' });
+      const grid = el('div', { class: 'board cols-3 locked' });
       const cells = [];
       for (let i = 0; i < 9; i++) {
         const c = el('button', { class: 'cell', onclick: () => tap(i) });
@@ -436,58 +366,504 @@ const GAMES = [
     },
   },
   {
-    id: 'improv', skill: 'speech', icon: '🎤', name: 'Импровизация',
+    id: 'pairs', skill: 'memory', icon: '🃏', name: 'Пары карточек',
     rules: [
-      'Выпадает случайная тема и три случайных слова.',
-      'Говори вслух на эту тему 60 секунд без остановки.',
-      'Вставь в речь все три слова, даже если они совсем не к месту.',
-      'В конце честно оцени себя. Лучше записывать себя на диктофон и потом переслушивать.',
+      'Под карточками спрятаны 8 пар картинок.',
+      'Открывай по две. Совпали — остаются открытыми, нет — переворачиваются обратно.',
+      'Найди все пары за как можно меньшее число ходов.',
     ],
     start({ area, setTimer, setScore, finish }) {
-      let topic, words, startedAt;
-      const chips = () => el('div', { class: 'chips' }, words.map(w => el('span', { class: 'chip' }, w)));
+      const icons = shuffle(PAIR_ICONS).slice(0, 8);
+      const sec = stopwatch(setTimer);
+      let open = [], found = 0, moves = 0;
+      setScore('Ходов: 0');
 
-      function prepare() {
-        topic = pick(TOPICS);
-        words = shuffle(WORDS).slice(0, 3);
-        setTimer('Подготовка');
-        setScore('');
-        area.replaceChildren(
-          el('div', { class: 'card' },
-            el('div', { class: 'muted' }, 'Тема'),
-            el('div', { class: 'topic' }, topic),
-            el('div', { class: 'muted', style: 'margin-bottom:8px' }, 'Вставь в речь слова:'),
-            chips()),
-          el('div', { class: 'row' },
-            el('button', { class: 'btn', onclick: prepare }, '🔄 Другая'),
-            el('button', { class: 'btn primary', onclick: speak }, 'Говорю!')));
+      function flip(c, icon) {
+        if (open.length === 2 || c.classList.contains('open')) return;
+        sound.flip();
+        c.classList.add('open');
+        c.textContent = icon;
+        open.push({ c, icon });
+        if (open.length < 2) return;
+        moves++;
+        setScore('Ходов: ' + moves);
+        const [a, b] = open;
+        if (a.icon === b.icon) {
+          sound.right();
+          a.c.classList.add('matched');
+          b.c.classList.add('matched');
+          open = [];
+          if (++found === 8) {
+            later(() => finish(Math.max(10, 130 - (moves - 8) * 6),
+              `Ходов: ${moves}, время: ${sec()} с. Идеал — 8 ходов, хороший результат — до 14.`), 500);
+          }
+        } else {
+          later(() => {
+            [a, b].forEach(o => { o.c.classList.remove('open'); o.c.textContent = ''; });
+            open = [];
+          }, 800);
+        }
       }
 
-      function speak() {
-        startedAt = Date.now();
-        const big = el('div', { class: 'big-timer' });
-        area.replaceChildren(
-          el('div', { class: 'card' }, el('div', { class: 'topic' }, topic), chips()),
-          big,
-          el('button', { class: 'btn big', onclick: rate }, 'Закончить раньше'));
-        countdown(60, t => { big.textContent = t; setTimer('⏳ ' + t + ' с'); }, () => { sound.finish(); rate(); });
+      area.append(el('div', { class: 'board cols-4 pairs' },
+        shuffle([...icons, ...icons]).map(icon => {
+          const c = el('button', { class: 'cell card-back', onclick: () => flip(c, icon) });
+          return c;
+        })));
+    },
+  },
+  {
+    id: 'cells', skill: 'memory', icon: '🔲', name: 'Запомни клетки',
+    rules: [
+      'На поле ненадолго загорятся несколько клеток — запомни, где они.',
+      'Потом нажми все эти клетки в любом порядке.',
+      'Справился — клеток станет больше. Ошибся — новый раунд с тем же числом клеток.',
+      'Три ошибки — конец игры.',
+    ],
+    start({ area, setTimer, setScore, finish }) {
+      let count = 3, lives = 3, won = 0, best = 0;
+      const wrap = el('div');
+      area.append(wrap);
+
+      function round() {
+        const size = count <= 5 ? 4 : count <= 8 ? 5 : 6;
+        const targets = new Set(shuffle([...Array(size * size).keys()]).slice(0, count));
+        let found = 0, input = false;
+        setScore('❤️'.repeat(lives));
+        setTimer('Клеток: ' + count);
+        const grid = el('div', { class: 'board locked', style: `grid-template-columns:repeat(${size},1fr)` });
+        const cells = [...Array(size * size)].map((_, i) => {
+          const c = el('button', { class: 'cell', onclick: () => tap(i, c) });
+          grid.append(c);
+          return c;
+        });
+        wrap.replaceChildren(grid);
+        later(() => { targets.forEach(i => cells[i].classList.add('lit')); sound.cell(4); }, 500);
+        later(() => {
+          targets.forEach(i => cells[i].classList.remove('lit'));
+          grid.classList.remove('locked');
+          input = true;
+        }, 1300 + count * 150);
+
+        function tap(i, c) {
+          if (!input || c.classList.contains('right')) return;
+          if (targets.has(i)) {
+            c.classList.add('right');
+            sound.right();
+            if (++found === count) {
+              input = false;
+              won++;
+              best = Math.max(best, count);
+              count++;
+              later(round, 700);
+            }
+            return;
+          }
+          input = false;
+          c.classList.add('wrong');
+          targets.forEach(j => cells[j].classList.add('hint'));
+          sound.wrong();
+          buzz();
+          if (--lives === 0) {
+            later(() => finish(won * 12, `Пройдено раундов: ${won}. Больше всего запомнил: ${best} клеток.`), 1200);
+          } else {
+            later(round, 1200);
+          }
+        }
       }
 
-      function rate() {
-        stopTimers();
-        const spoken = Math.min(60, Math.round((Date.now() - startedAt) / 1000));
-        setTimer(`Говорил ${spoken} с`);
-        const grade = (xp, text) => el('button', { class: 'btn', onclick: () =>
-          finish(xp * spoken / 60, `Говорил ${spoken} с. Самооценка: ${text.toLowerCase()}.`) }, text);
-        area.replaceChildren(
-          el('h2', { style: 'text-align:center' }, 'Как прошло?'),
-          el('div', { class: 'rate' },
-            grade(15, 'Много запинался'),
-            grade(30, 'Нормально, были паузы'),
-            grade(50, 'Без пауз и все слова')));
+      round();
+    },
+  },
+  {
+    id: 'nback', skill: 'memory', icon: '🔁', name: 'Два шага назад',
+    rules: [
+      'Клетки на поле загораются по одной, каждые 2,5 секунды.',
+      'Жми «Совпадает», если сейчас горит та же клетка, что и ДВА шага назад.',
+      'Пример: верх, центр, верх — на третьем шаге жми. Не совпадает — ничего не нажимай.',
+      'Это одна из самых изученных тренировок рабочей памяти. Сначала сложно — это нормально.',
+    ],
+    start({ area, setTimer, setScore, finish }) {
+      const N = 2, STEPS = 22;
+      const seq = [];
+      for (let i = 0; i < STEPS; i++) {
+        if (i >= N && Math.random() < 0.3) { seq.push(seq[i - N]); continue; }
+        let v;
+        do { v = rand(0, 8); } while (i >= N && v === seq[i - N]);
+        seq.push(v);
+      }
+      const matches = seq.filter((v, i) => i >= N && v === seq[i - N]).length;
+      let step = -1, pressed = false, hits = 0, falseHits = 0;
+
+      const grid = el('div', { class: 'board cols-3' });
+      const cells = [...Array(9)].map(() => {
+        const c = el('div', { class: 'cell' });
+        grid.append(c);
+        return c;
+      });
+      const btn = el('button', { class: 'btn primary big', onclick: press }, 'Совпадает');
+      area.append(grid, el('div', { style: 'margin-top:16px' }, btn));
+
+      const isMatch = () => step >= N && seq[step] === seq[step - N];
+
+      function press() {
+        if (step < 0 || pressed) return;
+        pressed = true;
+        if (isMatch()) { hits++; sound.right(); flash(btn, 'good'); }
+        else { falseHits++; sound.wrong(); buzz(); flash(btn, 'bad'); }
+        setScore('Поймано: ' + hits);
       }
 
-      prepare();
+      function next() {
+        step++;
+        if (step === STEPS) {
+          finish(Math.max(0, (hits - falseHits) * 10),
+            `Поймал совпадений: ${hits} из ${matches}. Ложных нажатий: ${falseHits}.`);
+          return;
+        }
+        pressed = false;
+        setTimer(`Шаг ${step + 1} из ${STEPS}`);
+        const c = cells[seq[step]];
+        c.classList.add('lit');
+        sound.cell(seq[step]);
+        later(() => c.classList.remove('lit'), 900);
+      }
+
+      setScore('Поймано: 0');
+      next();
+      every(next, 2500);
+    },
+  },
+
+  // ----- Внимание -----
+  {
+    id: 'stroop', skill: 'attention', icon: '🎨', name: 'Цвет или слово',
+    rules: [
+      'Появляется название цвета, написанное краской другого цвета.',
+      'Жми кнопку с цветом КРАСКИ, а не с тем, что написано.',
+      'Например, слово «СИНИЙ» красными буквами — жми «красный».',
+      '30 секунд. Ошибки уменьшают награду.',
+    ],
+    start(ctx) {
+      runQuiz(ctx, {
+        seconds: 30,
+        makeTask() {
+          const word = pick(COLORS);
+          let ink;
+          do { ink = pick(COLORS); } while (ink === word && Math.random() < 0.8);
+          return { text: word.name.toUpperCase(), color: ink.css, cls: 'stroop',
+            options: COLORS.map(c => c.name), answer: ink.name };
+        },
+        xp: st => Math.max(0, (st.right - st.wrong) * 4),
+        summary: st => `Верно: ${st.right}, ошибок: ${st.wrong}.`,
+      });
+    },
+  },
+  {
+    id: 'odd', skill: 'attention', icon: '🔍', name: 'Найди лишнее',
+    rules: [
+      'Все значки на поле одинаковые, кроме одного.',
+      'Найди и нажми лишний как можно быстрее.',
+      'Каждые три находки поле становится больше.',
+      '45 секунд. Ошибка отнимает 2 секунды.',
+    ],
+    start({ area, setTimer, setScore, finish }) {
+      const st = { right: 0, wrong: 0 };
+      const wrap = el('div');
+      area.append(wrap);
+
+      function next() {
+        const size = Math.min(7, 3 + Math.floor(st.right / 3));
+        const [a, b] = shuffle(pick(ODD_PAIRS));
+        const odd = rand(0, size * size - 1);
+        const grid = el('div', { class: 'board odd',
+          style: `grid-template-columns:repeat(${size},1fr);font-size:${Math.round(150 / size)}px` });
+        for (let i = 0; i < size * size; i++) {
+          const c = el('button', { class: 'cell', onclick: () => tap(i === odd, c) }, i === odd ? b : a);
+          grid.append(c);
+        }
+        wrap.replaceChildren(grid);
+      }
+
+      function tap(ok, c) {
+        if (ok) {
+          st.right++;
+          sound.right();
+          setScore('Найдено: ' + st.right);
+          next();
+        } else {
+          st.wrong++;
+          timer.add(-2);
+          sound.wrong();
+          buzz();
+          flash(c, 'wrong');
+        }
+      }
+
+      setScore('Найдено: 0');
+      next();
+      const timer = countdown(45, t => setTimer('⏳ ' + t + ' с'),
+        () => finish(Math.max(0, (st.right - st.wrong) * 6), `Найдено: ${st.right}, ошибок: ${st.wrong}.`));
+    },
+  },
+
+  // ----- Скорость -----
+  {
+    id: 'math', skill: 'speed', icon: '➗', name: 'Быстрый счёт',
+    rules: [
+      'Решай примеры в уме и выбирай правильный ответ.',
+      'Каждые 5 верных ответов — примеры сложнее.',
+      '45 секунд. Ошибка отнимает 2 секунды.',
+    ],
+    start(ctx) {
+      runQuiz(ctx, {
+        seconds: 45, penalty: 2,
+        makeTask(level) {
+          const ops = level < 2 ? ['+', '−'] : level < 4 ? ['+', '−', '×'] : ['+', '−', '×', '÷'];
+          const op = pick(ops), max = 10 * level + 5;
+          let a, b, res;
+          if (op === '+') { a = rand(2, max); b = rand(2, max); res = a + b; }
+          else if (op === '−') { a = rand(5, max + 5); b = rand(1, a); res = a - b; }
+          else if (op === '×') { a = rand(2, 3 + level * 2); b = rand(2, 9); res = a * b; }
+          else { b = rand(2, 9); res = rand(2, 3 + level * 2); a = b * res; }
+          return { text: `${a} ${op} ${b} = ?`, options: numberOptions(res), answer: res };
+        },
+        xp: st => Math.max(0, (st.right - st.wrong) * 6),
+        summary: st => `Верно: ${st.right}, ошибок: ${st.wrong}. Дошёл до уровня ${st.level}.`,
+      });
+    },
+  },
+  {
+    id: 'reaction', skill: 'speed', icon: '⚡', name: 'Реакция',
+    rules: [
+      'Нажми на большую кнопку — она станет красной. Жди.',
+      'Как только она станет зелёной, жми как можно быстрее.',
+      'Нажал раньше времени — попытка не засчитывается.',
+      '5 попыток, считается среднее время.',
+    ],
+    start({ area, setTimer, setScore, finish }) {
+      const results = [];
+      let phase = 'idle', t0 = 0, goTimer = null;
+      const pad = el('button', { class: 'reaction-pad', onpointerdown: tap }, 'Нажми, чтобы начать');
+      area.append(pad);
+      setTimer('');
+      setScore('Попытка 1 из 5');
+
+      function wait() {
+        phase = 'wait';
+        pad.className = 'reaction-pad wait';
+        pad.textContent = 'Жди зелёного…';
+        goTimer = later(() => {
+          phase = 'go';
+          pad.className = 'reaction-pad go';
+          pad.textContent = 'ЖМИ!';
+          t0 = performance.now();
+        }, rand(1500, 4000));
+      }
+
+      function tap() {
+        if (phase === 'idle') { wait(); return; }
+        if (phase === 'wait') {
+          clearTimeout(goTimer);
+          sound.wrong();
+          buzz();
+          phase = 'idle';
+          pad.className = 'reaction-pad early';
+          pad.textContent = 'Рано!\nНажми, чтобы повторить';
+          return;
+        }
+        if (phase !== 'go') return;
+        const ms = Math.round(performance.now() - t0);
+        results.push(ms);
+        sound.right();
+        if (results.length === 5) {
+          phase = 'done';
+          const avg = Math.round(results.reduce((a, b) => a + b) / 5);
+          finish(Math.min(100, Math.max(5, (600 - avg) / 3)),
+            `Среднее время: ${avg} мс (${results.join(', ')}). У большинства людей 250–350 мс.`);
+          return;
+        }
+        phase = 'idle';
+        setScore(`Попытка ${results.length + 1} из 5`);
+        pad.className = 'reaction-pad';
+        pad.textContent = `${ms} мс\nНажми для следующей попытки`;
+      }
+    },
+  },
+
+  // ----- Логика -----
+  {
+    id: 'hanoi', skill: 'logic', icon: '🗼', name: 'Ханойская башня',
+    rules: [
+      'Перенеси всю башню с левого стержня на правый.',
+      'Нажми на стержень, чтобы взять верхнее кольцо, потом на тот, куда его положить.',
+      'Нельзя класть большое кольцо на меньшее.',
+      'Минимум — 15 ходов. Подсказка: самое маленькое кольцо ходит через ход.',
+    ],
+    start({ area, setTimer, setScore, finish }) {
+      const D = 4, MIN = 15;
+      const pegs = [[4, 3, 2, 1], [], []];
+      const sec = stopwatch(setTimer);
+      let sel = null, moves = 0, done = false;
+      const board = el('div', { class: 'hanoi' });
+      area.append(board);
+
+      function draw() {
+        setScore('Ходов: ' + moves);
+        board.replaceChildren(...pegs.map((p, i) =>
+          el('button', { class: 'peg' + (sel === i ? ' selected' : ''), onclick: () => tap(i) },
+            el('div', { class: 'rod' }),
+            p.map(d => el('div', { class: 'disk', style: `width:${20 + d * 18}%;background:${DISK_COLORS[d - 1]}` })))));
+      }
+
+      function tap(i) {
+        if (done) return;
+        if (sel === null) {
+          if (pegs[i].length) { sel = i; sound.flip(); }
+        } else if (sel === i) {
+          sel = null;
+        } else {
+          const from = pegs[sel], to = pegs[i];
+          if (to.length && to[to.length - 1] < from[from.length - 1]) {
+            sound.wrong();
+            buzz();
+          } else {
+            to.push(from.pop());
+            moves++;
+            sound.right();
+          }
+          sel = null;
+          if (pegs[2].length === D) {
+            done = true;
+            later(() => finish(Math.max(10, 110 - (moves - MIN) * 4),
+              `Ходов: ${moves} (минимум ${MIN}), время: ${sec()} с.`), 500);
+          }
+        }
+        draw();
+      }
+
+      draw();
+    },
+  },
+  {
+    id: 'sudoku', skill: 'logic', icon: '🔢', name: 'Мини-судоку',
+    rules: [
+      'Поле 6×6 разбито на 6 блоков по 2×3 клетки.',
+      'Заполни пустые клетки цифрами от 1 до 6 так, чтобы в каждой строке, столбце и блоке цифры не повторялись.',
+      'Нажми на пустую клетку, потом на цифру внизу.',
+      'Неверная цифра не ставится и считается ошибкой.',
+    ],
+    start({ area, setTimer, setScore, finish }) {
+      const { sol, puzzle } = makeSudoku();
+      const sec = stopwatch(setTimer);
+      let sel = null, mistakes = 0, left = puzzle.flat().filter(v => !v).length;
+      setScore('Ошибок: 0');
+
+      // 6 блоков 2×3, внутри них клетки; cells[r*6+c] — клетка строки r, столбца c
+      const boxes = [...Array(6)].map(() => el('div', { class: 's-box' }));
+      const cells = [];
+      puzzle.forEach((row, r) => row.forEach((v, c) => {
+        const cell = el('button', { class: 's-cell' + (v ? ' given' : ''), onclick: () => select(r, c) }, v || '');
+        cells[r * 6 + c] = cell;
+        boxes[Math.floor(r / 2) * 2 + Math.floor(c / 3)].append(cell);
+      }));
+
+      function select(r, c) {
+        if (puzzle[r][c]) return;
+        sel = [r, c];
+        cells.forEach((cell, i) => cell.classList.toggle('selected', i === r * 6 + c));
+      }
+
+      function put(n) {
+        if (!sel) return;
+        const [r, c] = sel, cell = cells[r * 6 + c];
+        if (sol[r][c] !== n) {
+          mistakes++;
+          sound.wrong();
+          buzz();
+          flash(cell, 'wrong');
+          setScore('Ошибок: ' + mistakes);
+          return;
+        }
+        puzzle[r][c] = n;
+        cell.textContent = n;
+        cell.classList.remove('selected');
+        sel = null;
+        sound.right();
+        if (--left === 0) {
+          const s = sec();
+          later(() => finish(Math.max(10, 130 - mistakes * 15 - Math.floor(s / 5)),
+            `Время: ${s} с, ошибок: ${mistakes}.`), 500);
+        }
+      }
+
+      area.append(
+        el('div', { class: 'sudoku' }, boxes),
+        el('div', { class: 'numpad' }, [1, 2, 3, 4, 5, 6].map(n =>
+          el('button', { class: 'btn', onclick: () => put(n) }, n))));
+    },
+  },
+
+  // ----- Речь -----
+  {
+    id: 'anagram', skill: 'speech', icon: '🔤', name: 'Анаграммы',
+    rules: [
+      'Буквы слова перемешаны — собери из них слово.',
+      'Нажимай буквы по порядку. Ошибся — нажми на букву в ответе, и она вернётся.',
+      'Слова становятся длиннее: 5, потом 6, потом 7 букв.',
+      '60 секунд. «Пропустить» не даёт очков.',
+    ],
+    start({ area, setTimer, setScore, finish }) {
+      let right = 0, skipped = 0, list, word, letters, answer;
+      const seen = new Set();
+      const ansRow = el('div', { class: 'tiles answer-row' });
+      const pool = el('div', { class: 'tiles' });
+      area.append(ansRow, pool,
+        el('button', { class: 'btn big', style: 'margin-top:8px', onclick: () => { skipped++; next(); } }, 'Пропустить'));
+
+      function next() {
+        list = ANAGRAM_WORDS[Math.min(2, Math.floor(right / 3))];
+        const fresh = list.filter(w => !seen.has(w));
+        word = pick(fresh.length ? fresh : list);
+        seen.add(word);
+        do { letters = shuffle([...word.toUpperCase()]); } while (letters.join('') === word.toUpperCase());
+        answer = [];
+        draw();
+      }
+
+      function draw() {
+        ansRow.replaceChildren(...letters.map((_, k) => k < answer.length
+          ? el('button', { class: 'tile', onclick: () => { answer.splice(k, 1); draw(); } }, letters[answer[k]])
+          : el('div', { class: 'tile empty' })));
+        pool.replaceChildren(...letters.map((ch, i) =>
+          el('button', { class: 'tile' + (answer.includes(i) ? ' used' : ''), onclick: () => add(i) }, ch)));
+      }
+
+      function add(i) {
+        if (answer.includes(i)) return;
+        sound.flip();
+        answer.push(i);
+        draw();
+        if (answer.length < letters.length) return;
+        const formed = answer.map(k => letters[k]).join('').toLowerCase();
+        // засчитываем и другое слово из тех же букв, если оно есть в списке
+        if (list.includes(formed)) {
+          right++;
+          sound.right();
+          setScore('Собрано: ' + right);
+          next();
+        } else {
+          sound.wrong();
+          buzz();
+          flash(ansRow, 'wrong');
+          later(() => { answer = []; draw(); }, 400);
+        }
+      }
+
+      setScore('Собрано: 0');
+      next();
+      countdown(60, t => setTimer('⏳ ' + t + ' с'),
+        () => finish(right * 10, `Собрано слов: ${right}, пропущено: ${skipped}. Последнее слово: «${word}».`));
     },
   },
 ];
@@ -532,7 +908,7 @@ function renderHome() {
         el('div', { class: 'streak', title: 'Дней подряд' }, '🔥 ' + currentStreak()),
         soundButton())),
     rankCard(),
-    ...SKILLS.map(skill => {
+    SKILLS.map(skill => {
       const list = GAMES.filter(g => g.skill === skill.id);
       if (!list.length) return null;
       return el('section', {},
@@ -595,6 +971,7 @@ function finishGame(g, xp, summary) {
 
 function renderResult(g, xp, summary, record, newRank) {
   if (newRank) { sound.rankup(); buzz([80, 60, 80]); } else sound.finish();
+  const next = GAMES[(GAMES.indexOf(g) + 1) % GAMES.length];
   show(
     topbar('Результат', renderHome),
     el('div', { class: 'result' },
@@ -609,7 +986,9 @@ function renderResult(g, xp, summary, record, newRank) {
       rankCard(),
       el('div', { class: 'row' },
         el('button', { class: 'btn', onclick: renderHome }, 'В меню'),
-        el('button', { class: 'btn primary', onclick: () => playGame(g) }, 'Ещё раз'))));
+        el('button', { class: 'btn', onclick: () => playGame(g) }, 'Ещё раз')),
+      el('button', { class: 'btn primary big next-btn', onclick: () => renderIntro(next) },
+        `Дальше: ${next.icon} ${next.name} →`)));
 }
 
 function renderRanks() {
@@ -617,7 +996,7 @@ function renderRanks() {
   let armed = false;
   const reset = el('button', { class: 'btn danger', onclick: () => {
     if (!armed) { armed = true; reset.textContent = 'Точно? Нажми ещё раз — всё обнулится'; return; }
-    state = { xp: 0, games: {}, streak: { last: null, count: 0 } };
+    state = { xp: 0, games: {}, streak: { last: null, count: 0 }, sound: state.sound };
     saveState();
     renderHome();
   } }, 'Сбросить прогресс');
