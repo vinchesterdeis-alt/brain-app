@@ -160,6 +160,8 @@ p { margin: 10px 0; }
 
 /* Результат */
 .result { text-align: center; }
+.result-xp.minus { color: var(--bad, #c0504d); }
+.rankdown { filter: grayscale(.6); }
 .result-xp { font-family: var(--serif); font-size: 52px; color: var(--gold); margin: 16px 0 4px; }
 .record { color: var(--gold); font-weight: 600; }
 .rankup { background: linear-gradient(135deg, #d97757, #c96442); color: #fff; border-radius: 20px; padding: 20px; margin-bottom: 12px; animation: pop .5s; }

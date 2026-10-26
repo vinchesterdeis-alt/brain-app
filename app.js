@@ -353,7 +353,7 @@ const GAMES = [
           buzz(200);
           cells[i].classList.add('wrong');
           const done = seq.length - 1;
-          later(() => finish(Math.max(0, done - 2) * 15,
+          later(() => finish((done - 2) * 15,
             `Запомнил цепочку из ${done} клеток. Норма для взрослого — 6–8.`), 700);
           return;
         }
@@ -394,7 +394,7 @@ const GAMES = [
           b.c.classList.add('matched');
           open = [];
           if (++found === 8) {
-            later(() => finish(Math.max(10, 130 - (moves - 8) * 6),
+            later(() => finish(130 - (moves - 8) * 6,
               `Ходов: ${moves}, время: ${sec()} с. Идеал — 8 ходов, хороший результат — до 14.`), 500);
           }
         } else {
@@ -465,7 +465,7 @@ const GAMES = [
           sound.wrong();
           buzz();
           if (--lives === 0) {
-            later(() => finish(won * 12, `Пройдено раундов: ${won}. Больше всего запомнил: ${best} клеток.`), 1200);
+            later(() => finish((won - 1) * 12, `Пройдено раундов: ${won}. Больше всего запомнил: ${best} клеток.`), 1200);
           } else {
             later(round, 1200);
           }
@@ -517,7 +517,7 @@ const GAMES = [
       function next() {
         step++;
         if (step === STEPS) {
-          finish(Math.max(0, (hits - falseHits) * 10),
+          finish((hits - falseHits) * 10 - (hits === 0 ? 10 : 0),
             `Поймал совпадений: ${hits} из ${matches}. Ложных нажатий: ${falseHits}.`);
           return;
         }
@@ -554,7 +554,7 @@ const GAMES = [
           return { text: word.name.toUpperCase(), color: ink.css, cls: 'stroop',
             options: COLORS.map(c => c.name), answer: ink.name };
         },
-        xp: st => Math.max(0, (st.right - st.wrong) * 4),
+        xp: st => (st.right - st.wrong) * 4,
         summary: st => `Верно: ${st.right}, ошибок: ${st.wrong}.`,
       });
     },
@@ -603,7 +603,7 @@ const GAMES = [
       setScore('Найдено: 0');
       next();
       const timer = countdown(45, t => setTimer('⏳ ' + t + ' с'),
-        () => finish(Math.max(0, (st.right - st.wrong) * 6), `Найдено: ${st.right}, ошибок: ${st.wrong}.`));
+        () => finish((st.right - st.wrong) * 6, `Найдено: ${st.right}, ошибок: ${st.wrong}.`));
     },
   },
 
@@ -628,7 +628,7 @@ const GAMES = [
           else { b = rand(2, 9); res = rand(2, 3 + level * 2); a = b * res; }
           return { text: `${a} ${op} ${b} = ?`, options: numberOptions(res), answer: res };
         },
-        xp: st => Math.max(0, (st.right - st.wrong) * 6),
+        xp: st => (st.right - st.wrong) * 6,
         summary: st => `Верно: ${st.right}, ошибок: ${st.wrong}. Дошёл до уровня ${st.level}.`,
       });
     },
@@ -679,7 +679,7 @@ const GAMES = [
         if (results.length === 5) {
           phase = 'done';
           const avg = Math.round(results.reduce((a, b) => a + b) / 5);
-          finish(Math.min(100, Math.max(5, (600 - avg) / 3)),
+          finish(Math.min(100, (600 - avg) / 3),
             `Среднее время: ${avg} мс (${results.join(', ')}). У большинства людей 250–350 мс.`);
           return;
         }
@@ -735,7 +735,7 @@ const GAMES = [
           sel = null;
           if (pegs[2].length === D) {
             done = true;
-            later(() => finish(Math.max(10, 110 - (moves - MIN) * 4),
+            later(() => finish(110 - (moves - MIN) * 4,
               `Ходов: ${moves} (минимум ${MIN}), время: ${sec()} с.`), 500);
           }
         }
@@ -792,7 +792,7 @@ const GAMES = [
         sound.right();
         if (--left === 0) {
           const s = sec();
-          later(() => finish(Math.max(10, 130 - mistakes * 15 - Math.floor(s / 5)),
+          later(() => finish(130 - mistakes * 15 - Math.floor(s / 5),
             `Время: ${s} с, ошибок: ${mistakes}.`), 500);
         }
       }
@@ -863,7 +863,7 @@ const GAMES = [
       setScore('Собрано: 0');
       next();
       countdown(60, t => setTimer('⏳ ' + t + ' с'),
-        () => finish(right * 10, `Собрано слов: ${right}, пропущено: ${skipped}. Последнее слово: «${word}».`));
+        () => finish(right * 10 - skipped * 5, `Собрано слов: ${right}, пропущено: ${skipped}. Последнее слово: «${word}».`));
     },
   },
 ];
@@ -955,10 +955,11 @@ function playGame(g) {
   });
 }
 
+const MAX_PENALTY = 30;   // за одну плохую игру снимаем не больше 30 XP
 function finishGame(g, xp, summary) {
-  xp = Math.max(0, Math.round(xp));
+  xp = Math.max(-MAX_PENALTY, Math.round(xp));
   const before = rankIndex(state.xp);
-  state.xp += xp;
+  state.xp = Math.max(0, state.xp + xp);
   const st = state.games[g.id] || (state.games[g.id] = { plays: 0, best: 0 });
   st.plays++;
   const record = st.plays > 1 && xp > st.best;
@@ -966,21 +967,22 @@ function finishGame(g, xp, summary) {
   updateStreak();
   saveState();
   const after = rankIndex(state.xp);
-  renderResult(g, xp, summary, record, after > before ? RANKS[after] : null);
+  renderResult(g, xp, summary, record, after > before ? RANKS[after] : after < before ? { ...RANKS[after], down: true } : null);
 }
 
 function renderResult(g, xp, summary, record, newRank) {
-  if (newRank) { sound.rankup(); buzz([80, 60, 80]); } else sound.finish();
+  if (newRank && !newRank.down) { sound.rankup(); buzz([80, 60, 80]); } else if (xp < 0) { sound.wrong(); buzz(); } else sound.finish();
   const next = GAMES[(GAMES.indexOf(g) + 1) % GAMES.length];
   show(
     topbar('Результат', renderHome),
     el('div', { class: 'result' },
-      newRank ? el('div', { class: 'rankup' },
+      newRank ? el('div', { class: 'rankup' + (newRank.down ? ' rankdown' : '') },
         el('div', { class: 'rankup-icon' }, newRank.icon),
-        el('div', {}, 'Новое звание!'),
+        el('div', {}, newRank.down ? 'Звание понижено 😬' : 'Новое звание!'),
         el('div', { class: 'rank-name' }, newRank.name),
-        el('div', {}, newRank.quote)) : null,
-      el('div', { class: 'result-xp' }, '+' + xp + ' XP'),
+        el('div', {}, newRank.down ? 'Мозг тоже мышца: потренируйся — и звание вернётся.' : newRank.quote)) : null,
+      el('div', { class: 'result-xp' + (xp < 0 ? ' minus' : '') }, (xp < 0 ? '−' + -xp : '+' + xp) + ' XP'),
+      xp < 0 ? el('p', { class: 'muted small' }, 'Слабый результат — опыт снят. Попробуй ещё раз спокойнее.') : null,
       record ? el('div', { class: 'record' }, '🏆 Новый рекорд!') : null,
       el('p', {}, summary),
       rankCard(),
@@ -1002,7 +1004,7 @@ function renderRanks() {
   } }, 'Сбросить прогресс');
   show(
     topbar('Звания', renderHome),
-    el('p', { class: 'muted' }, `У тебя ${state.xp} XP. Опыт даётся за каждую игру.`),
+    el('p', { class: 'muted' }, `У тебя ${state.xp} XP. Опыт даётся за каждую игру, а за слабую — снимается (не больше ${MAX_PENALTY} XP).`),
     RANKS.map((r, i) => el('div', { class: 'rank-row' + (i > cur ? ' locked' : '') + (i === cur ? ' current' : '') },
       el('div', { class: 'rank-row-icon' }, r.icon),
       el('div', {},

@@ -1,6 +1,6 @@
 // Офлайн-режим: сначала пробуем сеть (чтобы обновления приходили сами),
 // без интернета отдаём сохранённую копию.
-const CACHE = 'brain-v3';
+const CACHE = 'brain-v4';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json',
   'icons/icon-192.png', 'icons/icon-512.png'];
 
