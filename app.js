@@ -1013,7 +1013,19 @@ function renderRanks() {
 
 // ================= Запуск =================
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  navigator.serviceWorker.register('sw.js');
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+    // проверяем обновления и когда приложение снова открыли из фона
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') reg.update();
+    });
+  });
+  // пришла новая версия — один раз перезагружаемся, но не посреди игры
+  let reloaded = !navigator.serviceWorker.controller; // первая установка — перезагрузка не нужна
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloaded) return;
+    reloaded = true;
+    if (!document.querySelector('.hud')) location.reload();
+  });
 }
 
 renderHome();

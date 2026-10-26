@@ -1,6 +1,6 @@
 // Офлайн-режим: сначала пробуем сеть (чтобы обновления приходили сами),
 // без интернета отдаём сохранённую копию.
-const CACHE = 'brain-v2';
+const CACHE = 'brain-v3';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json',
   'icons/icon-192.png', 'icons/icon-512.png'];
 
@@ -17,8 +17,9 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+  // no-cache: всегда спрашиваем сервер, не изменился ли файл (кэш браузера не подсовывает старьё)
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then(res => {
         const copy = res.clone();
         caches.open(CACHE).then(c => c.put(e.request, copy));
