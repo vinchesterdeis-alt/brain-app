@@ -107,14 +107,49 @@ function stopTimers() {
 // Обратный отсчёт; add(-2) отнимает 2 секунды
 function countdown(seconds, onTick, onEnd) {
   const t = { end: Date.now() + seconds * 1000, add(s) { this.end += s * 1000; } };
+  let prev = seconds;
   const id = every(() => {
     const left = Math.max(0, Math.ceil((t.end - Date.now()) / 1000));
+    if (left !== prev && left > 0 && left <= 5) sound.tick();
+    prev = left;
     onTick(left);
     if (left <= 0) { clearInterval(id); onEnd(); }
   }, 200);
   onTick(seconds);
   return t;
 }
+
+// ================= Звук =================
+// Мягкие звуки синтезируются на лету, без файлов
+let audio = null;
+
+function tone(freq, start = 0, dur = 0.15, vol = 0.06, type = 'sine') {
+  if (state.sound === false) return;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === 'suspended') audio.resume();
+    const t = audio.currentTime + start;
+    const osc = audio.createOscillator(), gain = audio.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(vol, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(gain).connect(audio.destination);
+    osc.start(t);
+    osc.stop(t + dur + 0.05);
+  } catch (e) {}
+}
+
+const NOTES = [262, 294, 330, 349, 392, 440, 494, 523, 587]; // до, ре, ми… для клеток
+const sound = {
+  right: () => tone(880, 0, 0.1, 0.05),
+  wrong: () => tone(160, 0, 0.25, 0.08, 'triangle'),
+  cell: n => tone(NOTES[n], 0, 0.35, 0.07),
+  tick: () => tone(1200, 0, 0.04, 0.025),
+  finish: () => [523, 659, 784].forEach((f, i) => tone(f, i * 0.1, 0.35)),
+  rankup: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.12, 0.5, 0.08)),
+};
 
 function buzz(ms = 60) {
   try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {}
@@ -164,9 +199,11 @@ function runQuiz({ area, setTimer, setScore, finish }, { seconds, penalty = 0, m
     if (o === task.answer) {
       st.right++;
       if (st.right % 5 === 0) st.level++;
+      sound.right();
     } else {
       st.wrong++;
       if (penalty) timer.add(-penalty);
+      sound.wrong();
       buzz();
       flash(q, 'wrong');
     }
@@ -257,7 +294,8 @@ const GAMES = [
       const grid = el('div', { class: 'schulte' });
       shuffle([...Array(25)].map((_, i) => i + 1)).forEach(n => {
         const c = el('button', { class: 'cell', onclick: () => {
-          if (n !== next) { penalty += 2; buzz(); flash(c, 'wrong'); return; }
+          if (n !== next) { penalty += 2; sound.wrong(); buzz(); flash(c, 'wrong'); return; }
+          sound.right();
           flash(c, 'right');
           next++;
           if (next > 25) {
@@ -360,6 +398,7 @@ const GAMES = [
       let pos = 0, input = false;
 
       function light(n) {
+        sound.cell(n);
         cells[n].classList.add('lit');
         later(() => cells[n].classList.remove('lit'), 400);
       }
@@ -380,6 +419,7 @@ const GAMES = [
         light(i);
         if (i !== seq[pos]) {
           input = false;
+          sound.wrong();
           buzz(200);
           cells[i].classList.add('wrong');
           const done = seq.length - 1;
@@ -430,7 +470,7 @@ const GAMES = [
           el('div', { class: 'card' }, el('div', { class: 'topic' }, topic), chips()),
           big,
           el('button', { class: 'btn big', onclick: rate }, 'Закончить раньше'));
-        countdown(60, t => { big.textContent = t; setTimer('⏳ ' + t + ' с'); }, rate);
+        countdown(60, t => { big.textContent = t; setTimer('⏳ ' + t + ' с'); }, () => { sound.finish(); rate(); });
       }
 
       function rate() {
@@ -474,11 +514,23 @@ function gameCard(g) {
     el('div', { class: 'game-best' }, st ? `рекорд: ${st.best} XP` : 'новая'));
 }
 
+function soundButton() {
+  const b = el('button', { class: 'icon-btn', 'aria-label': 'Звук', onclick: () => {
+    state.sound = state.sound === false;
+    saveState();
+    b.textContent = state.sound ? '🔊' : '🔇';
+    sound.right();
+  } }, state.sound === false ? '🔇' : '🔊');
+  return b;
+}
+
 function renderHome() {
   show(
     el('header', { class: 'home-head' },
       el('h1', {}, 'Мозгокачалка'),
-      el('div', { class: 'streak', title: 'Дней подряд' }, '🔥 ' + currentStreak())),
+      el('div', { class: 'head-right' },
+        el('div', { class: 'streak', title: 'Дней подряд' }, '🔥 ' + currentStreak()),
+        soundButton())),
     rankCard(),
     ...SKILLS.map(skill => {
       const list = GAMES.filter(g => g.skill === skill.id);
@@ -542,7 +594,7 @@ function finishGame(g, xp, summary) {
 }
 
 function renderResult(g, xp, summary, record, newRank) {
-  if (newRank) buzz([80, 60, 80]);
+  if (newRank) { sound.rankup(); buzz([80, 60, 80]); } else sound.finish();
   show(
     topbar('Результат', renderHome),
     el('div', { class: 'result' },

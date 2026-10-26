@@ -33,6 +33,7 @@ p { margin: 10px 0; }
 
 /* Главный экран */
 .home-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; }
+.head-right { display: flex; gap: 8px; align-items: center; }
 .streak { background: var(--panel); padding: 6px 12px; border-radius: 999px; font-weight: 600; }
 
 .rank-card {
